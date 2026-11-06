@@ -422,13 +422,17 @@ pub fn zval_to_stub(zval: &Zval) -> String {
     }
 }
 
-impl<T: IntoZval + Clone> IntoZvalDyn for T {
+impl<T: IntoZval + Clone + StubLiteral> IntoZvalDyn for T {
     fn as_zval(&self, persistent: bool) -> Result<Zval> {
         self.clone().into_zval(persistent)
     }
 
     fn get_type(&self) -> DataType {
         Self::TYPE
+    }
+
+    fn stub_value(&self) -> String {
+        self.stub_literal()
     }
 }
 
@@ -582,6 +586,7 @@ mod tests {
         assert_eq!(Some("x".to_string()).stub_literal(), "'x'");
         assert_eq!(Vec::<i64>::new().stub_literal(), "[]");
         assert_eq!(vec![1, 2].stub_literal(), "[1, 2]");
+        assert_eq!([1, 2].stub_literal(), "[1, 2]");
         let map: std::collections::HashMap<&str, i64> = [("b", 2), ("a", 1)].into();
         assert_eq!(map.stub_literal(), "['a' => 1, 'b' => 2]");
     }

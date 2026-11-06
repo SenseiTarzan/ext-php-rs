@@ -14,6 +14,7 @@
 //! - `IndexSet<V>` ↔ `ZendHashTable` (via `index_set` module, requires `indexmap` feature)
 //! - `Vec<T>` and `Vec<(K, V)>` ↔ `ZendHashTable` (via `vec` module)
 
+mod array;
 mod btree_map;
 mod btree_set;
 mod hash_map;

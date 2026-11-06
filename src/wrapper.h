@@ -67,3 +67,6 @@ bool ext_php_rs_zend_first_try_catch(void* (*callback)(void *), void *ctx, void 
 void ext_php_rs_zend_bailout();
 zend_op_array *ext_php_rs_zend_compile_string(zend_string *source, const char *filename);
 void ext_php_rs_zend_execute(zend_op_array *op_array);
+
+zend_constant *ext_php_rs_zend_register_array_constant(const char *name, size_t name_len, const zend_array *arrval, int flags, int module_number);
+void ext_php_rs_make_array_immutable(zval *zv);

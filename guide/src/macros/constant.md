@@ -33,12 +33,26 @@ const TEST_CONSTANT_THE_SECOND: i32 = 42;
 #[php_const]
 const ANOTHER_STRING_CONST: &'static str = "Hello world!";
 
+// Fixed-size arrays [T; N] are supported as compile-time constants:
+#[php_const]
+const ALLOWED_METHODS: [&'static str; 3] = ["GET", "POST", "HEAD"];
+
+#[php_const]
+const PRIMES: [i64; 4] = [2, 3, 5, 7];
+
 #[php_module]
 pub fn get_module(module: ModuleBuilder) -> ModuleBuilder {
+    // Dynamic collections like Vec<T> cannot be Rust `const` items due to heap
+    // allocation, but can be registered dynamically in the module builder:
+    let dynamic_tags: Vec<String> = vec!["php".into(), "rust".into(), "ext-php-rs".into()];
+
     module
         .constant(wrap_constant!(TEST_CONSTANT))
         .constant(wrap_constant!(TEST_CONSTANT_THE_SECOND))
+        .constant(wrap_constant!(ALLOWED_METHODS))
+        .constant(wrap_constant!(PRIMES))
         .constant(("MANUAL_CONSTANT", ANOTHER_STRING_CONST, &[]))
+        .constant(("DYNAMIC_TAGS", dynamic_tags, &[]))
 }
 # fn main() {}
 ```
@@ -51,4 +65,20 @@ pub fn get_module(module: ModuleBuilder) -> ModuleBuilder {
 var_dump(TEST_CONSTANT); // int(100)
 var_dump(I_AM_RENAMED); // int(42)
 var_dump(MANUAL_CONSTANT); // string(12) "Hello world!"
+var_dump(ALLOWED_METHODS); // array(3) { [0]=> string(3) "GET", ... }
+var_dump(PRIMES); // array(4) { [0]=> int(2), ... }
+var_dump(DYNAMIC_TAGS); // array(3) { [0]=> string(3) "php", ... }
 ```
+
+## Supported Constant Types
+
+Types implementing `IntoConst` and `IntoZval` can be registered as constants:
+- Scalar types: `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `f32`, `f64`, `bool`.
+- Strings: `&'static str`, `String`.
+- Fixed-size arrays: `[T; N]` where `T: IntoConst + IntoZval`. In PHP, these are registered as persistent immutable arrays.
+- Vectors: `Vec<T>` where `T: IntoConst + IntoZval`. Since `Vec` allocates on the heap, it cannot be a compile-time Rust `const`, but it can be passed at module startup via `module.constant(("NAME", vec, &[]))` or `module.dyn_constant(...)`.
+
+> **Note on Immutability:**
+> Passing a `Vec<T>` as a constant copies its values into a persistent, immutable Zend array (`IS_ARRAY_IMMUTABLE`). It does **not** create a live or mutable binding. Even if you retain a `Vec` or modify it internally in Rust after module initialization, the registered PHP constant will **never** change. Furthermore, if PHP user code attempts to modify the array, PHP's Copy-On-Write (COW) mechanism ensures the constant remains untouched.
+
+

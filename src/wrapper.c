@@ -165,3 +165,60 @@ void ext_php_rs_zend_execute(zend_op_array *op_array) {
   destroy_op_array(op_array);
   efree(op_array);
 }
+
+
+static void copy_constant_array(zval *dst, const zend_array *src) /* {{{ */
+{
+  zend_string *key;
+  zend_ulong idx;
+  zval *new_val, *val;
+
+  zend_array *ht = pemalloc(sizeof(zend_array), true);
+  zend_hash_init(ht, zend_hash_num_elements(src), NULL, ZVAL_PTR_DTOR, true);
+
+  ZEND_HASH_FOREACH_KEY_VAL(src, idx, key, val) {
+    /* constant arrays can't contain references */
+    ZVAL_DEREF(val);
+    if (key) {
+      zend_string *interned_key = zend_string_init_interned(ZSTR_VAL(key), ZSTR_LEN(key), true);
+      new_val = zend_hash_add_new(ht, interned_key, val);
+      zend_string_release(interned_key);
+    } else {
+      new_val = zend_hash_index_add_new(ht, idx, val);
+    }
+    if (Z_TYPE_P(val) == IS_ARRAY) {
+      copy_constant_array(new_val, Z_ARRVAL_P(val));
+    } else if (Z_TYPE_P(val) == IS_STRING) {
+      zend_string *interned_str = zend_string_init_interned(Z_STRVAL_P(val), Z_STRLEN_P(val), true);
+      ZVAL_STR(new_val, interned_str);
+      Z_TYPE_FLAGS_P(new_val) = 0;
+    } else {
+      ZVAL_COPY_VALUE(new_val, val);
+    }
+  } ZEND_HASH_FOREACH_END();
+
+  GC_SET_REFCOUNT(ht, 1);
+  GC_ADD_FLAGS(ht, IS_ARRAY_IMMUTABLE | GC_PERSISTENT | GC_NOT_COLLECTABLE);
+  Z_ARR_P(dst) = ht;
+  Z_TYPE_INFO_P(dst) = IS_ARRAY;
+}
+
+zend_constant *ext_php_rs_zend_register_array_constant(const char *name, size_t name_len, const zend_array *arrval, int flags, int module_number) {
+
+  zend_constant c;
+  copy_constant_array(&c.value, arrval);
+  ZEND_CONSTANT_SET_FLAGS(&c, flags, module_number);
+  c.name = zend_string_init_interned(name, name_len, flags & CONST_PERSISTENT);
+
+  return zend_register_constant(&c);
+}
+
+void ext_php_rs_make_array_immutable(zval *zv) {
+  if (Z_TYPE_P(zv) == IS_ARRAY) {
+    zend_array *old = Z_ARRVAL_P(zv);
+    if (!(GC_FLAGS(old) & IS_ARRAY_IMMUTABLE)) {
+      copy_constant_array(zv, old);
+      zend_array_destroy(old);
+    }
+  }
+}

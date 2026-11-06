@@ -50,6 +50,17 @@ unsafe extern "C" {
         filename: *const c_char,
     ) -> *mut zend_op_array;
     pub fn ext_php_rs_zend_execute(op_array: *mut zend_op_array);
+
+    pub fn ext_php_rs_make_array_immutable(zv: *mut zval);
+
+    pub fn ext_php_rs_zend_register_array_constant(
+        name: *const c_char,
+        name_len: usize,
+        arrval: *const zend_array,
+        flags: ::std::os::raw::c_int,
+        module_number: ::std::os::raw::c_int,
+    );
+
 }
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));

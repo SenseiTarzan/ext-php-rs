@@ -1,15 +1,17 @@
 //! Types and traits for registering constants in PHP.
 
+use super::flags::GlobalConstantFlags;
+use crate::boxed::ZBox;
+use crate::convert::IntoZval;
+use crate::error::{Error, Result};
+use crate::ffi::{
+    ext_php_rs_zend_register_array_constant, zend_register_bool_constant,
+    zend_register_double_constant, zend_register_long_constant, zend_register_string_constant,
+};
+use crate::types::ZendHashTable;
 use cfg_if::cfg_if;
 use std::ffi::CString;
 use std::fmt::Debug;
-
-use super::flags::GlobalConstantFlags;
-use crate::error::Result;
-use crate::ffi::{
-    zend_register_bool_constant, zend_register_double_constant, zend_register_long_constant,
-    zend_register_string_constant,
-};
 
 /// Implemented on types which can be registered as a constant in PHP.
 pub trait IntoConst: Debug {
@@ -185,6 +187,75 @@ impl IntoConst for bool {
                     );
                 }
             }
+        };
+        Ok(())
+    }
+}
+impl<T, const N: usize> IntoConst for [T; N]
+where
+    T: IntoConst + IntoZval + Clone + Debug,
+{
+    fn stub_value(&self) -> String {
+        let parts = self.iter().map(IntoConst::stub_value).collect::<Vec<_>>();
+        format!("[{}]", parts.join(", "))
+    }
+
+    fn register_constant_flags(
+        &self,
+        name: &str,
+        module_number: i32,
+        flags: GlobalConstantFlags,
+    ) -> Result<()> {
+        unsafe {
+            let mut ht =
+                ZendHashTable::with_capacity(N.try_into().map_err(|_| Error::IntegerOverflow)?);
+            for item in self {
+                ht.push((*item).clone())?;
+            }
+
+            ext_php_rs_zend_register_array_constant(
+                CString::new(name)?.as_ptr(),
+                name.len() as _,
+                &raw const *ht,
+                flags.bits().try_into()?,
+                module_number,
+            );
+        };
+        Ok(())
+    }
+}
+
+impl<T> IntoConst for Vec<T>
+where
+    T: IntoConst + IntoZval + Clone + Debug,
+{
+    fn stub_value(&self) -> String {
+        let parts = self.iter().map(IntoConst::stub_value).collect::<Vec<_>>();
+        format!("[{}]", parts.join(", "))
+    }
+
+    fn register_constant_flags(
+        &self,
+        name: &str,
+        module_number: i32,
+        flags: GlobalConstantFlags,
+    ) -> Result<()> {
+        unsafe {
+            let mut ht: ZBox<ZendHashTable> = ZendHashTable::with_capacity(
+                self.len().try_into().map_err(|_| Error::IntegerOverflow)?,
+            );
+            for item in self {
+                ht.push((*item).clone())?;
+            }
+
+            let c_name = CString::new(name)?;
+            ext_php_rs_zend_register_array_constant(
+                c_name.as_ptr(),
+                name.len() as _,
+                &raw const *ht,
+                flags.bits().try_into()?,
+                module_number,
+            );
         };
         Ok(())
     }

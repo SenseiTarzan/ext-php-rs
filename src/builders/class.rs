@@ -23,6 +23,7 @@ use crate::{
     zend::{ClassEntry, CompilerGlobals, ExecuteData, ExecutorGlobals, FunctionEntry},
     zend_fastcall,
 };
+use crate::constant::IntoConst;
 
 /// A constant entry: (name, `value_closure`, docs, `stub_value`, flags)
 type ConstantEntry = (
@@ -216,6 +217,39 @@ impl ClassBuilder {
         let stub = crate::convert::zval_to_stub(&zval);
         self.constants
             .push((name.into(), Box::new(|| Ok(zval)), docs, stub, flags));
+        Ok(self)
+    }
+
+    /// Adds a constant to the class using lazy evaluation.
+    /// The type of the constant is defined by the type of the given default.
+    ///
+    /// This method is specifically designed to safely handle **Array** constants.
+    /// Unlike [`constant`](Self::constant), this defers the internal `Zval` creation
+    /// until the Zend engine is fully initialized, preventing crashes during stub generation.
+    ///
+    /// Returns a result containing the class builder if the constant was
+    /// successfully added.
+    ///
+    /// # Parameters
+    ///
+    /// * `name` - The name of the constant to add to the class.
+    /// * `value` - The value of the constant.
+    /// * `docs` - Documentation comments for the constant.
+    /// * `flags` - Visibility of the constant.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `value` cannot be converted into a [`Zval`].
+    pub fn constant_lazy<T: Into<String>>(
+        mut self,
+        name: T,
+        value: impl IntoConst + IntoZval + 'static,
+        docs: DocComments,
+        flags: ConstantFlags,
+    ) -> Result<Self> {
+        let stub = value.stub_value();
+        self.constants
+            .push((name.into(), Box::new(move || value.into_zval(true)), docs, stub, flags));
         Ok(self)
     }
 
@@ -534,6 +568,9 @@ impl ClassBuilder {
             // the constants table owns it and the `Zval` must not run its destructor.
             let mut value = ManuallyDrop::new(value()?);
             unsafe {
+                if value.is_array() {
+                    crate::ffi::ext_php_rs_make_array_immutable(&raw mut *value);
+                }
                 zend_declare_class_constant_ex(
                     class,
                     name.as_ptr().cast_mut(),

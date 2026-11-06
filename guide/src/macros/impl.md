@@ -180,8 +180,11 @@ Constructors cannot use the visibility or rename attributes listed above.
 ## Constants
 
 Constants are defined as regular Rust `impl` constants. Any type that implements
-`IntoZval` can be used as a constant. A constant accepts the `name`,
+`IntoConst` and `IntoZval` can be used as a constant. A constant accepts the `name`,
 `change_case` and `vis` options. The default visibility is `public`.
+
+Fixed-size arrays (`[T; N]`) can also be declared as class constants. When registered,
+they are converted into persistent immutable PHP arrays.
 
 ```rust,no_run
 # #![cfg_attr(windows, feature(abi_vectorcall))]
@@ -199,13 +202,34 @@ impl Limits {
 
     #[php(vis = "private", name = "SEED")]
     const RANDOM_SEED: i64 = 42;
+
+    pub const ALLOWED_ROLES: [&'static str; 3] = ["admin", "editor", "viewer"];
+    pub const DEFAULT_PORTS: [i64; 2] = [80, 443];
 }
 # fn main() {}
 ```
 
-PHP sees `public const MAX_USERS`, `protected const MAX_RETRIES` and
-`private const SEED`. Reflection reports the same visibility, and the generated
-stubs print it.
+PHP sees `public const MAX_USERS`, `protected const MAX_RETRIES`, `private const SEED`,
+`public const ALLOWED_ROLES = ['admin', 'editor', 'viewer']` and `public const DEFAULT_PORTS = [80, 443]`.
+Reflection reports the same visibility, and the generated stubs print the full literal values.
+
+Dynamic collections like `Vec<T>` cannot be Rust compile-time `const` items, but can be added
+programmatically via `ClassBuilder::constant` or `ClassBuilder::dyn_constant`:
+
+```rust,ignore
+let mut builder = ClassBuilder::new("Limits");
+builder = builder.constant(
+    "FEATURES",
+    vec!["auth", "billing", "analytics"],
+    &[],
+    ConstantFlags::Public,
+)?;
+```
+
+> **Note on Immutability:**
+> Adding a `Vec<T>` as a class constant copies its elements into an immutable Zend array. Modifying the original `Vec` internally within Rust afterwards has **no effect** on the registered class constant.
+
+
 
 ## Property getters and setters
 
